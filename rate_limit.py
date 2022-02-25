@@ -102,7 +102,6 @@ class RateLimitScene(MovingCameraScene):
         info_label = Text(f"{self.get_label()}: ", font_size=32)
 
         number = Integer(0)
-        number.set_value(3)
         info_labels_group2 = VGroup(info_label, number) \
             .arrange(direction=RIGHT) \
             .move_to(pos(0, 5))
@@ -118,7 +117,6 @@ class RateLimitScene(MovingCameraScene):
             rate_limiter.tick(x)
             animations: List[Animation] = []
             for y in range(count):
-                number.set_value(self.get_counter_label())
 
                 should_allow = rate_limiter.check(CLIENT1)
                 box = Box(x, y)
@@ -128,6 +126,7 @@ class RateLimitScene(MovingCameraScene):
 
                 animations.append(FadeIn(box))
 
+            number.set_value(self.get_counter_label())
             animations.append(dot.animate.set_x(x + 1))
             if animations:
                 self.play(*animations)
@@ -146,7 +145,7 @@ class FixWindowScene(RateLimitScene):
         return self.rate_limiter
 
     def get_label(self) -> str:
-        pass
+        return "Counter"
 
     def get_counter_label(self) -> int:
         return self.rate_limiter.counter[CLIENT1]
@@ -162,7 +161,7 @@ class TokenBucketScene(RateLimitScene):
         return self.rate_limiter
 
     def get_label(self) -> str:
-        pass
+        return "Token"
 
     def get_counter_label(self) -> int:
         return self.rate_limiter.tokens[CLIENT1]
