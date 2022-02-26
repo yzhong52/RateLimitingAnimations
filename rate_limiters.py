@@ -1,5 +1,5 @@
 from collections import defaultdict
-from typing import List
+from typing import List, Dict
 
 
 class RateLimiter:
@@ -29,27 +29,43 @@ class FixedWindow(RateLimiter):
         return allowed
 
 
+class Bucket:
+    def __init__(self):
+        self.last_refill_time = -2
+        self.count = 0
+
+
 class TokenBucketLimiter(RateLimiter):
     def __init__(self, clients: List[str]):
         super().__init__()
-        self.window = 5
+        # Every {window} seconds, we refill the bucket with {refill_tokens}
+        self.refill_tokens = 2
+        self.refill_window = 2
+
         self.limit = 5
-        self.tokens = defaultdict(int)
+        self._tokens = defaultdict(lambda: Bucket())
         for client in clients:
-            self.tokens[client] = 0
-        self.last_time = -1
+            self._tokens[client] = Bucket()
+
+    @property
+    def tokens(self) -> Dict[str, Bucket]:
+        return self._tokens
+
+    def _refill(self, current_time: int, client_id: str):
+        bucket = self.tokens[client_id]
+        refill_window_count = (current_time - bucket.last_refill_time) // self.refill_window
+        bucket.count += min(
+            refill_window_count * self.refill_tokens,
+            self.limit
+        )
+        bucket.last_refill_time += refill_window_count * self.refill_tokens
 
     def tick(self, current_time: int):
-        if self.last_time == current_time:
-            return
-        self.last_time = current_time
-
-        # Add one token per second
         for client_id in self.tokens:
-            self.tokens[client_id] = min(self.limit, self.tokens[client_id] + 1)
+            self._refill(current_time, client_id)
 
     def check(self, client_id: str) -> bool:
-        self.tokens[client_id] -= 1
-        should_allow = self.tokens[client_id] >= 0
-        self.tokens[client_id] = max(0, self.tokens[client_id])
-        return should_allow
+        if self.tokens[client_id].count > 0:
+            self.tokens[client_id].count -= 1
+            return True
+        return False

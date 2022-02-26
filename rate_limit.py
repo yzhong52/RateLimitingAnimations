@@ -86,7 +86,8 @@ class RateLimitScene(MovingCameraScene):
         rate_limiter = self.get_rate_limiter()
         for x, count in enumerate([2, 1, 0, 4, 2, 3, 0, 2, 3, 1]):
             rate_limiter.tick(x)
-            animations: List[Animation] = []
+            animations: List[Animation] = [counter.animate.set_value(self.get_counter_label())]
+
             current_allowed_count = 0
             current_blocked_count = 0
             for y in range(count):
@@ -99,19 +100,13 @@ class RateLimitScene(MovingCameraScene):
                 animations.append(FadeIn(box))
 
             animations.append(
-                counter.animate.set_value(self.get_counter_label())
-            )
-            animations.append(
                 allowed_count.animate.set_value(current_allowed_count)
             )
             animations.append(
                 blocked_count.animate.set_value(current_blocked_count)
             )
             animations.append(dot.animate.set_x(x + 1))
-            if animations:
-                self.play(*animations)
-            else:
-                self.wait(1)
+            self.play(*animations)
         self.wait()
 
 
@@ -156,4 +151,4 @@ class TokenBucketScene(RateLimitScene):
         return "Token"
 
     def get_counter_label(self) -> int:
-        return self.rate_limiter.tokens[CLIENT1]
+        return self.rate_limiter.tokens[CLIENT1].count
