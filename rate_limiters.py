@@ -77,8 +77,8 @@ class TokenBucket(RateLimiter):
     def _refill(self, current_time: int, client_id: str):
         bucket = self.tokens[client_id]
         refill_window_count = (current_time - bucket.last_refill_time) // self.refill_window
-        bucket.count += min(
-            refill_window_count * self.refill_tokens,
+        bucket.count = min(
+            bucket.count + refill_window_count * self.refill_tokens,
             self.limit
         )
         bucket.last_refill_time += refill_window_count * self.refill_tokens

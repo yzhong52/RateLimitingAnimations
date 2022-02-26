@@ -36,10 +36,32 @@ class RequestBox(Box, ABC):
         super().__init__(x=x, y=y, color=box_color, stroke_color=box_color, fill_opacity=0.5)
 
 
+x_axis_buffer = 1
+x_axis_init_size = 10
+request_counts = [2, 1, 0, 4, 2, 3, 0, 2, 3, 1]
+
+
+def create_time_tick(x: int) -> [VMobject]:
+    """
+    Add a small vertical line on the time (x_axis) and a number lable
+    """
+    line = Line(pos(x, -0.1), pos(x, 0.1))
+    text = Text(f"{x}", font_size=24).next_to(line, DOWN)
+    return [line, text]
+
+
 class RateLimitScene(MovingCameraScene):
     def __init__(self):
         super(RateLimitScene, self).__init__()
-        self.label_counts = 0
+        self.label_offset_y = 0
+        self.x_axis = Arrow(
+            start=pos(-x_axis_buffer, 0),
+            end=pos(x_axis_init_size + x_axis_buffer, 0),
+            stroke_width=4
+        )
+
+        # A dot to indicate the current time
+        self.time_dot = Dot(point=pos(0, 0))
 
     def get_rate_limiter(self) -> RateLimiter:
         pass
@@ -53,22 +75,22 @@ class RateLimitScene(MovingCameraScene):
     def set_up_scene(self):
         self.camera.frame.move_to(np.array([5, 2, 0]))
 
-        x_axis = Arrow(start=pos(-1, 0), end=pos(11, 0), stroke_width=4)
+        x_axis = self.x_axis
         for x in range(0, 11):
-            line = Line(pos(x, -0.1), pos(x, 0.1))
-            text = Text(f"{x}", font_size=24).next_to(line, DOWN)
-            self.add(line, text)
+            self.add(*create_time_tick(x))
         self.add(x_axis)
 
         time_label = Text("Time", font_size=32).next_to(x_axis, DOWN * 3)
         self.add(time_label)
 
-    def create_label_counter(self, label: str, label_color: str = WHITE) -> Integer:
+        self.add(self.time_dot)
+
+    def create_label_counter(self, label: str, label_color: str = WHITE, initial_value: int = 0) -> Integer:
         label = Text(f"{label}:", font_size=32, font="Comic Sans MS", color=label_color)
-        counter = Integer(0, color=label_color)
+        counter = Integer(initial_value, color=label_color)
         group = VGroup(label, counter).arrange(direction=RIGHT)
-        group.move_to(pos(0, 5 - self.label_counts), aligned_edge=LEFT)
-        self.label_counts += .7
+        group.move_to(pos(0, 5 - self.label_offset_y), aligned_edge=LEFT)
+        self.label_offset_y += 0.7
         self.add(group)
         return counter
 
@@ -79,13 +101,10 @@ class RateLimitScene(MovingCameraScene):
         allowed_count = self.create_label_counter("Allowed", label_color=GREEN)
         blocked_count = self.create_label_counter("Blocked", label_color=RED)
 
-        dot = Dot(point=pos(0, 0))
-        self.add(dot)
-
         self.wait()
 
         rate_limiter = self.get_rate_limiter()
-        for current_time, count in enumerate([2, 1, 0, 4, 2, 3, 0, 2, 3, 1]):
+        for current_time, count in enumerate(request_counts):
             rate_limiter.tick(current_time)
             animations: List[Animation] = [counter.animate.set_value(self.get_counter_label())]
 
@@ -106,9 +125,9 @@ class RateLimitScene(MovingCameraScene):
             animations.append(
                 blocked_count.animate.set_value(current_blocked_count)
             )
-            animations.append(dot.animate.set_x(current_time + 1))
+            self.bring_to_front(self.time_dot)
+            animations.append(self.time_dot.animate.set_x(current_time + 1))
             self.play(*animations)
-        self.wait()
 
 
 class FixWindowScene(RateLimitScene):
@@ -138,21 +157,9 @@ class FixWindowScene(RateLimitScene):
             )
             self.add(dashed_line)
 
-
-class TokenBucketScene(RateLimitScene):
-
-    def __init__(self):
-        self.rate_limiter = TokenBucket([CLIENT1])
-        super().__init__()
-
-    def get_rate_limiter(self) -> RateLimiter:
-        return self.rate_limiter
-
-    def get_label(self) -> str:
-        return "Tokens"
-
-    def get_counter_label(self) -> int:
-        return self.rate_limiter.tokens[CLIENT1].count
+    def construct(self):
+        super().construct()
+        self.wait()
 
 
 class SlidingLogScene(RateLimitScene):
@@ -169,3 +176,137 @@ class SlidingLogScene(RateLimitScene):
 
     def get_counter_label(self) -> int:
         return len(self.rate_limiter.logs[CLIENT1])
+
+    def construct(self):
+        super().construct()
+        self.wait()
+
+
+class TokenBucketScene(RateLimitScene):
+
+    def __init__(self):
+        self.rate_limiter = TokenBucket([CLIENT1])
+        super().__init__()
+
+    def get_rate_limiter(self) -> RateLimiter:
+        return self.rate_limiter
+
+    def get_label(self) -> str:
+        return "Tokens"
+
+    def get_counter_label(self) -> int:
+        return self.rate_limiter.tokens[CLIENT1].count
+
+    def construct(self):
+        super().construct()
+        self.wait()
+
+
+class TokenBucketSceneProlonged(RateLimitScene):
+    def __init__(self):
+        self.rate_limiter = TokenBucket([CLIENT1])
+        super().__init__()
+
+    def get_rate_limiter(self) -> RateLimiter:
+        return self.rate_limiter
+
+    def get_label(self) -> str:
+        return "Tokens"
+
+    def get_counter_label(self) -> int:
+        return self.rate_limiter.tokens[CLIENT1].count
+
+    def construct(self):
+        self.set_up_scene()
+
+        rate_limiter = self.get_rate_limiter()
+
+        current_tokens_counter = 0
+        current_allowed_count = 0
+        current_blocked_count = 0
+        for current_time, count in enumerate(request_counts):
+            rate_limiter.tick(current_time)
+            current_tokens_counter = self.get_counter_label()
+
+            current_allowed_count = 0
+            current_blocked_count = 0
+            for y in range(count):
+                allowed = rate_limiter.check(CLIENT1, current_time=current_time)
+                if allowed:
+                    current_allowed_count += 1
+                else:
+                    current_blocked_count += 1
+                box = RequestBox(x=current_time, y=y, blocked=not allowed)
+                self.add(box)
+
+        self.time_dot.set_x(len(request_counts))
+        animations: List[Animation] = []
+
+        tokens_count = self.create_label_counter(self.get_label(), initial_value=current_tokens_counter)
+        allowed_count = self.create_label_counter("Allowed", label_color=GREEN, initial_value=current_allowed_count)
+        blocked_count = self.create_label_counter("Blocked", label_color=RED, initial_value=current_blocked_count)
+
+        animations.append(
+            allowed_count.animate.set_value(current_allowed_count)
+        )
+        animations.append(
+            blocked_count.animate.set_value(current_blocked_count)
+        )
+
+        animations.append(
+            self.time_dot.animate.set_x(len(request_counts))
+        )
+        self.play(*animations)
+
+        camera: MovingCamera = self.camera
+
+        camera_width_padding = camera.frame_width - len(request_counts)
+        self.bring_to_front(self.time_dot)
+
+        additional_requests = [0, 0, 1, 0, 0, 0, 5, 2, 1, 0, 0]
+        for current_time_x, current_requests_count in enumerate(additional_requests):
+            animations.clear()
+
+            current_time_x += len(request_counts)
+            next_time_x = current_time_x + 1
+
+            self.rate_limiter.tick(current_time_x)
+            animations.append(tokens_count.animate.set_value(self.get_counter_label()))
+
+            animations.append(
+                self.x_axis.animate.put_start_and_end_on(
+                    start=pos(-x_axis_buffer, 0),
+                    end=pos(next_time_x + x_axis_buffer, 0)
+                )
+            )
+            animations.append(self.time_dot.animate.set_x(current_time_x))
+
+            animations.extend([FadeIn(obj) for obj in create_time_tick(next_time_x)])
+
+            current_allowed_count = 0
+            current_blocked_count = 0
+            for y in range(current_requests_count):
+                allowed = rate_limiter.check(CLIENT1, current_time=current_time_x)
+                if allowed:
+                    current_allowed_count += 1
+                else:
+                    current_blocked_count += 1
+                box = RequestBox(x=current_time_x, y=y, blocked=not allowed)
+                animations.append(FadeIn(box))
+
+            animations.append(
+                allowed_count.animate.set_value(current_allowed_count)
+            )
+            animations.append(
+                blocked_count.animate.set_value(current_blocked_count)
+            )
+
+            zoom_out_animation = camera.frame.animate \
+                .move_to(np.array([next_time_x / 2, 2, 0])) \
+                .set_width(camera_width_padding + next_time_x)
+
+            animations.append(zoom_out_animation)
+            self.play(*animations)
+            self.bring_to_front(self.time_dot)
+
+        self.wait()
