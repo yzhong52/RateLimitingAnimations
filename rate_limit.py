@@ -1,10 +1,9 @@
 from abc import ABC
-from collections import defaultdict
-from random import random, randint
-
 from manim import *
 
 import numpy as np
+
+from rate_limiters import RateLimiter, FixedWindow, TokenBucketLimiter
 
 CLIENT1 = "Client 1"
 
@@ -27,58 +26,21 @@ class Box(Square, ABC):
         self.set_y(y + side_length / 2 + 0.02)
 
 
-class RateLimiter:
-    # Should be called once per second
-    def tick(self, current_time: int):
-        pass
+class RequestBox(Box, ABC):
+    """
+    A class requesting a request. Red means that it is blocked, green means that it is allowed.
+    """
 
-    def check(self, client_id: str) -> bool:
-        return False
-
-
-class FixedWindow(RateLimiter):
-    def __init__(self):
-        self.window = 5
-        self.limit = 5
-        self.counter = defaultdict(int)
-
-    def tick(self, current_time: int):
-        if self.window == 1 or current_time % self.window == 0:
-            # Reset counters
-            self.counter = defaultdict(int)
-
-    def check(self, client_id: str) -> bool:
-        self.counter[client_id] += 1
-        return self.counter[client_id] <= self.limit
-
-
-class TokenBucketLimiter(RateLimiter):
-    def __init__(self, clients: List[str]):
-        super().__init__()
-        self.window = 5
-        self.limit = 5
-        self.tokens = defaultdict(int)
-        for client in clients:
-            self.tokens[client] = 0
-        self.last_time = -1
-
-    def tick(self, current_time: int):
-        if self.last_time == current_time:
-            return
-        self.last_time = current_time
-
-        # Add one token per second
-        for client_id in self.tokens:
-            self.tokens[client_id] = min(self.limit, self.tokens[client_id] + 1)
-
-    def check(self, client_id: str) -> bool:
-        self.tokens[client_id] -= 1
-        should_allow = self.tokens[client_id] >= 0
-        self.tokens[client_id] = max(0, self.tokens[client_id])
-        return should_allow
+    def __init__(self, x: int, y: int, blocked: bool):
+        box_color = RED if blocked else GREEN
+        super().__init__(x=x, y=y, color=box_color, stroke_color=box_color, fill_opacity=0.5)
 
 
 class RateLimitScene(MovingCameraScene):
+    def __init__(self):
+        super(RateLimitScene, self).__init__()
+        self.label_counts = 0
+
     def get_rate_limiter(self) -> RateLimiter:
         pass
 
@@ -88,7 +50,9 @@ class RateLimitScene(MovingCameraScene):
     def get_counter_label(self) -> int:
         pass
 
-    def construct(self):
+    def set_up_scene(self):
+        self.camera.frame.move_to(np.array([5, 2, 0]))
+
         x_axis = Arrow(start=pos(-1, 0), end=pos(11, 0), stroke_width=4)
         for x in range(0, 11):
             line = Line(pos(x, -0.1), pos(x, 0.1))
@@ -99,34 +63,50 @@ class RateLimitScene(MovingCameraScene):
         time_label = Text("Time", font_size=32).next_to(x_axis, DOWN * 3)
         self.add(time_label)
 
-        info_label = Text(f"{self.get_label()}: ", font_size=32)
+    def create_label_counter(self, label: str, label_color: str = WHITE) -> Integer:
+        label = Text(f"{label}:", font_size=32, font="Comic Sans MS", color=label_color)
+        counter = Integer(0, color=label_color)
+        group = VGroup(label, counter).arrange(direction=RIGHT).move_to(pos(0, 5 - self.label_counts))
+        self.label_counts += .7
+        self.add(group)
+        return counter
 
-        number = Integer(0)
-        info_labels_group2 = VGroup(info_label, number) \
-            .arrange(direction=RIGHT) \
-            .move_to(pos(0, 5))
-        self.add(info_labels_group2)
+    def construct(self):
+        self.set_up_scene()
 
-        self.camera.frame.move_to(np.array([5, 2, 0]))
+        counter = self.create_label_counter(self.get_label())
+        allowed_count = self.create_label_counter("Allowed", label_color=GREEN)
+        blocked_count = self.create_label_counter("Blocked", label_color=RED)
 
         dot = Dot(point=pos(0, 0))
+        self.add(dot)
+
         self.wait()
 
         rate_limiter = self.get_rate_limiter()
         for x, count in enumerate([2, 1, 0, 4, 2, 3, 0, 2, 3, 1]):
             rate_limiter.tick(x)
             animations: List[Animation] = []
+            current_allowed_count = 0
+            current_blocked_count = 0
             for y in range(count):
-
-                should_allow = rate_limiter.check(CLIENT1)
-                box = Box(x, y)
-                box_color = GREEN if should_allow else RED
-                box.set_stroke(box_color)
-                box.set_fill(color=box_color, opacity=0.5)
-
+                allowed = rate_limiter.check(CLIENT1)
+                if allowed:
+                    current_allowed_count += 1
+                else:
+                    current_blocked_count += 1
+                box = RequestBox(x, y, not allowed)
                 animations.append(FadeIn(box))
 
-            number.set_value(self.get_counter_label())
+            animations.append(
+                counter.animate.set_value(self.get_counter_label())
+            )
+            animations.append(
+                allowed_count.animate.set_value(current_allowed_count)
+            )
+            animations.append(
+                blocked_count.animate.set_value(current_blocked_count)
+            )
             animations.append(dot.animate.set_x(x + 1))
             if animations:
                 self.play(*animations)
@@ -149,6 +129,18 @@ class FixWindowScene(RateLimitScene):
 
     def get_counter_label(self) -> int:
         return self.rate_limiter.counter[CLIENT1]
+
+    def set_up_scene(self):
+        super().set_up_scene()
+        for x in range(0, 15, 5):
+            dashed_line = DashedLine(
+                start=pos(x, -1),
+                end=pos(x, 4),
+                stroke_opacity=0.2,
+                dash_length=0.1,
+                dashed_ratio=0.5
+            )
+            self.add(dashed_line)
 
 
 class TokenBucketScene(RateLimitScene):
