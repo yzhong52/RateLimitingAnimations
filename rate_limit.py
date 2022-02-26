@@ -3,7 +3,7 @@ from manim import *
 
 import numpy as np
 
-from rate_limiters import RateLimiter, FixedWindow, TokenBucketLimiter
+from rate_limiters import RateLimiter, FixedWindow, TokenBucket, SlidingLog
 
 CLIENT1 = "Client 1"
 
@@ -66,7 +66,8 @@ class RateLimitScene(MovingCameraScene):
     def create_label_counter(self, label: str, label_color: str = WHITE) -> Integer:
         label = Text(f"{label}:", font_size=32, font="Comic Sans MS", color=label_color)
         counter = Integer(0, color=label_color)
-        group = VGroup(label, counter).arrange(direction=RIGHT).move_to(pos(0, 5 - self.label_counts))
+        group = VGroup(label, counter).arrange(direction=RIGHT)
+        group.move_to(pos(0, 5 - self.label_counts), aligned_edge=LEFT)
         self.label_counts += .7
         self.add(group)
         return counter
@@ -84,19 +85,19 @@ class RateLimitScene(MovingCameraScene):
         self.wait()
 
         rate_limiter = self.get_rate_limiter()
-        for x, count in enumerate([2, 1, 0, 4, 2, 3, 0, 2, 3, 1]):
-            rate_limiter.tick(x)
+        for current_time, count in enumerate([2, 1, 0, 4, 2, 3, 0, 2, 3, 1]):
+            rate_limiter.tick(current_time)
             animations: List[Animation] = [counter.animate.set_value(self.get_counter_label())]
 
             current_allowed_count = 0
             current_blocked_count = 0
             for y in range(count):
-                allowed = rate_limiter.check(CLIENT1)
+                allowed = rate_limiter.check(CLIENT1, current_time=current_time)
                 if allowed:
                     current_allowed_count += 1
                 else:
                     current_blocked_count += 1
-                box = RequestBox(x, y, not allowed)
+                box = RequestBox(x=current_time, y=y, blocked=not allowed)
                 animations.append(FadeIn(box))
 
             animations.append(
@@ -105,7 +106,7 @@ class RateLimitScene(MovingCameraScene):
             animations.append(
                 blocked_count.animate.set_value(current_blocked_count)
             )
-            animations.append(dot.animate.set_x(x + 1))
+            animations.append(dot.animate.set_x(current_time + 1))
             self.play(*animations)
         self.wait()
 
@@ -141,14 +142,30 @@ class FixWindowScene(RateLimitScene):
 class TokenBucketScene(RateLimitScene):
 
     def __init__(self):
-        self.rate_limiter = TokenBucketLimiter([CLIENT1])
+        self.rate_limiter = TokenBucket([CLIENT1])
         super().__init__()
 
     def get_rate_limiter(self) -> RateLimiter:
         return self.rate_limiter
 
     def get_label(self) -> str:
-        return "Token"
+        return "Tokens"
 
     def get_counter_label(self) -> int:
         return self.rate_limiter.tokens[CLIENT1].count
+
+
+class SlidingLogScene(RateLimitScene):
+
+    def __init__(self):
+        self.rate_limiter = SlidingLog()
+        super().__init__()
+
+    def get_rate_limiter(self) -> RateLimiter:
+        return self.rate_limiter
+
+    def get_label(self) -> str:
+        return "Logs"
+
+    def get_counter_label(self) -> int:
+        return len(self.rate_limiter.logs[CLIENT1])

@@ -1,5 +1,5 @@
 from collections import defaultdict
-from typing import List, Dict
+from typing import List, Dict, Deque
 
 
 class RateLimiter:
@@ -7,7 +7,7 @@ class RateLimiter:
     def tick(self, current_time: int):
         pass
 
-    def check(self, client_id: str) -> bool:
+    def check(self, client_id: str, current_time: int) -> bool:
         return False
 
 
@@ -22,30 +22,53 @@ class FixedWindow(RateLimiter):
             # Reset counters
             self.counter = defaultdict(int)
 
-    def check(self, client_id: str) -> bool:
+    def check(self, client_id: str, current_time: int) -> bool:
         allowed = self.counter[client_id] < self.limit
         if allowed:
             self.counter[client_id] += 1
         return allowed
 
 
-class Bucket:
+class SlidingLog(RateLimiter):
     def __init__(self):
-        self.last_refill_time = -2
-        self.count = 0
+        self._logs = defaultdict(lambda: Deque[int]())
+        self.window = 5
+        self.limit = 5
+
+    @property
+    def logs(self) -> Dict[str, Deque[int]]:
+        return self._logs
+
+    def tick(self, current_time: int):
+        for _, log in self.logs.items():
+            if log and log[0] < current_time - self.window:
+                log.popleft()
+
+    def check(self, client_id: str, current_time: int) -> bool:
+        log = self.logs[client_id]
+        if len(log) < self.limit:
+            log.append(current_time)
+            return True
+        return False
 
 
-class TokenBucketLimiter(RateLimiter):
+class TokenBucket(RateLimiter):
+    class Bucket:
+        def __init__(self):
+            self.last_refill_time = -2
+            self.count = 0
+
     def __init__(self, clients: List[str]):
         super().__init__()
+
         # Every {window} seconds, we refill the bucket with {refill_tokens}
         self.refill_tokens = 2
         self.refill_window = 2
 
         self.limit = 5
-        self._tokens = defaultdict(lambda: Bucket())
+        self._tokens = defaultdict(lambda: TokenBucket.Bucket())
         for client in clients:
-            self._tokens[client] = Bucket()
+            self._tokens[client] = TokenBucket.Bucket()
 
     @property
     def tokens(self) -> Dict[str, Bucket]:
@@ -64,7 +87,7 @@ class TokenBucketLimiter(RateLimiter):
         for client_id in self.tokens:
             self._refill(current_time, client_id)
 
-    def check(self, client_id: str) -> bool:
+    def check(self, client_id: str, current_time: int) -> bool:
         if self.tokens[client_id].count > 0:
             self.tokens[client_id].count -= 1
             return True
