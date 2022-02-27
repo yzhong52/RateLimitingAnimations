@@ -41,7 +41,7 @@ class SlidingLog(RateLimiter):
 
     def tick(self, current_time: int):
         for _, log in self.logs.items():
-            if log and log[0] <= current_time - self.window:
+            while log and log[0] <= current_time - self.window:
                 log.popleft()
 
     def check(self, client_id: str, current_time: int) -> bool:

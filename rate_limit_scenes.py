@@ -129,6 +129,8 @@ class RateLimitScene(MovingCameraScene):
             animations.append(self.time_dot.animate.set_x(current_time + 1))
             self.play(*animations)
 
+        self.wait()
+
 
 class FixWindowScene(RateLimitScene):
 
@@ -157,10 +159,6 @@ class FixWindowScene(RateLimitScene):
             )
             self.add(dashed_line)
 
-    def construct(self):
-        super().construct()
-        self.wait()
-
 
 class SlidingLogScene(RateLimitScene):
 
@@ -177,10 +175,6 @@ class SlidingLogScene(RateLimitScene):
     def get_counter_label(self) -> int:
         return len(self.rate_limiter.logs[CLIENT1])
 
-    def construct(self):
-        super().construct()
-        self.wait()
-
 
 class TokenBucketScene(RateLimitScene):
 
@@ -196,10 +190,6 @@ class TokenBucketScene(RateLimitScene):
 
     def get_counter_label(self) -> int:
         return self.rate_limiter.tokens[CLIENT1].count
-
-    def construct(self):
-        super().construct()
-        self.wait()
 
 
 class TokenBucketSceneProlonged(RateLimitScene):
