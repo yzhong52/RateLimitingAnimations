@@ -234,19 +234,11 @@ class TokenBucketSceneProlonged(RateLimitScene):
 
         tokens_count = self.create_label_counter(self.get_label(), initial_value=current_tokens_counter)
         allowed_count = self.create_label_counter("Allowed", label_color=GREEN, initial_value=current_allowed_count)
-        blocked_count = self.create_label_counter("Blocked", label_color=RED, initial_value=current_blocked_count)
 
-        animations.append(
-            allowed_count.animate.set_value(current_allowed_count)
-        )
-        animations.append(
-            blocked_count.animate.set_value(current_blocked_count)
-        )
-
-        animations.append(
-            self.time_dot.animate.set_x(len(request_counts))
-        )
-        self.play(*animations)
+        # There seems to be a weird bug, without setting the initial value to '0' first, the number is not scaled
+        # properly https://github.com/yzhong52/RateLimitingAnimations/pull/1
+        blocked_count = self.create_label_counter("Blocked", label_color=RED, initial_value=0)
+        self.play(blocked_count.animate.set_value(current_blocked_count))
 
         camera: MovingCamera = self.camera
 
